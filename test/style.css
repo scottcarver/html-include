@@ -1,0 +1,35 @@
+/* Section */
+section{
+    max-width:800px;
+    margin:auto;
+    font-family: sans-serif;
+}
+
+/* Blockify */
+[data-role="header"],  [data-role="main"], [data-role="footer"]{
+    display: block;
+    padding:50px;
+}
+
+/* Header */
+header, [data-role="header"]{ 
+    background:lightblue;
+}
+
+/* Main */
+main, [data-role="main"]{ 
+    background:cornsilk;
+}
+
+/* Footer */
+footer, [data-role="footer"]{
+    background:lavenderblush;
+    
+    ul{
+        list-style:none;
+        display: flex;
+        gap:20px;
+        margin:0;
+        padding:0;
+    }
+}
