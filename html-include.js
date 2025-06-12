@@ -1,76 +1,76 @@
-/**
- * <html-include> Web Component
- * Dynamically loads and injects external HTML into the page using the `src` attribute.
- * Supports simple templating via `data-*` attributes and fallback content.
- */
 class HtmlInclude extends HTMLElement {
-  /** @type {Map<string, string>} In-memory cache of fetched HTML content */
-  static cache = new Map();
-
-  constructor() {
-    super();
-    /** @private {MutationObserver} Observes changes to the `src` attribute */
-    this._observer = new MutationObserver(() => this.loadContent());
-    /** @private {string} Inner HTML to show if fetch fails or during loading */
-    this._fallback = this.innerHTML;
-  }
-
-  /** Called when the element is added to the DOM */
+  /**
+   * Triggered when the element is added to the DOM.
+   * Kicks off loading and rendering of the external HTML.
+   */
   connectedCallback() {
-    this.loadContent();
-    this._observer.observe(this, { attributes: true, attributeFilter: ['src'] });
-  }
-
-  /** Called when the element is removed from the DOM */
-  disconnectedCallback() {
-    this._observer.disconnect();
+    const src = this.getAttribute('src');
+    if (!src) return;
+    this.loadAndRender(src);
   }
 
   /**
-   * Fetches external HTML, processes template variables, and injects content.
-   * Also processes nested <html-include> tags recursively.
-   * @returns {Promise<void>}
+   * Fetch the HTML, apply logic, pass down props, and insert it into the DOM.
+   * @param {string} src - The URL of the HTML fragment to include.
    */
-  async loadContent() {
-    const src = this.getAttribute('src');
-    if (!src) return;
-
-    // Display fallback while loading
-    this.innerHTML = this._fallback;
-
+  async loadAndRender(src) {
     try {
-      let html;
+      const response = await fetch(src);
+      if (!response.ok) throw new Error(`Fetch failed: ${response.status}`);
+      let html = await response.text();
 
-      // Use cache if available
-      if (HtmlInclude.cache.has(src)) {
-        html = HtmlInclude.cache.get(src);
-      } else {
-        const response = await fetch(src);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        html = await response.text();
-        HtmlInclude.cache.set(src, html);
-      }
+      html = this.applyConditionals(html);
+      html = this.interpolateVariables(html);
 
-      // Basic templating: replace {{key}} with this.dataset[key]
-      html = html.replace(/{{(.*?)}}/g, (_, key) => {
-        const value = this.dataset[key.trim()];
-        return value !== undefined ? value : '';
+      // Create a template so we can manipulate DOM before inserting
+      const template = document.createElement('template');
+      template.innerHTML = html;
+
+      // Prop drilling: pass this component's dataset to any nested <html-include> tags
+      template.content.querySelectorAll('html-include').forEach(child => {
+        for (const [key, value] of Object.entries(this.dataset)) {
+          if (!child.dataset.hasOwnProperty(key)) {
+            child.dataset[key] = value;
+          }
+        }
       });
 
-      this.innerHTML = html;
-
-      // Recursively process nested includes
-      const nested = this.querySelectorAll('html-include');
-      for (const el of nested) {
-        await customElements.whenDefined('html-include');
-        el.loadContent?.();
-      }
-
+      // Clear this element and insert the processed content
+      this.innerHTML = '';
+      this.appendChild(template.content);
     } catch (err) {
-      this.innerHTML = `<pre style="color:red;">Error loading "${src}": ${err.message}</pre>`;
+      console.error('html-include error:', err);
     }
+  }
+
+  /**
+   * Replace {{key}} placeholders with values from this element's data-* attributes.
+   * @param {string} html - Raw HTML content to process.
+   * @returns {string} - HTML with interpolated values.
+   */
+  interpolateVariables(html) {
+    return html.replace(/{{(.*?)}}/g, (_, key) => {
+      return this.dataset[key.trim()] ?? '';
+    });
+  }
+
+  /**
+   * Evaluate and process {{#if key == "value"}}...{{/if}} logic blocks.
+   * Only supports == and != comparisons for now.
+   * @param {string} html - Raw HTML content to process.
+   * @returns {string} - HTML with resolved conditional content.
+   */
+  applyConditionals(html) {
+    return html.replace(/{{#if (.*?)}}([\s\S]*?){{\/if}}/g, (_, condition, content) => {
+      const match = condition.match(/(\w+)\s*(==|!=)\s*["'](.*?)["']/);
+      if (!match) return '';
+      const [, key, operator, expected] = match;
+      const actual = this.dataset[key];
+      const result = operator === '==' ? actual === expected : actual !== expected;
+      return result ? content : '';
+    });
   }
 }
 
-// Define the custom element
+// Register the custom element
 customElements.define('html-include', HtmlInclude);
